@@ -15,14 +15,12 @@ import androidx.annotation.NonNull
 import androidx.core.app.ActivityCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import io.flutter.embedding.engine.plugins.activity.ActivityPluginBinding
+import io.flutter.plugin.common.*
 
-import io.flutter.plugin.common.MethodCall
-import io.flutter.plugin.common.PluginRegistry
-
-
-class BackgroundLocationService: MethodChannel.MethodCallHandler, PluginRegistry.RequestPermissionsResultListener {
+class BackgroundLocationService: MethodChannel.MethodCallHandler, PluginRegistry.RequestPermissionsResultListener, EventChannel.StreamHandler {
     companion object {
         const val METHOD_CHANNEL_NAME = "${BackgroundLocationPlugin.PLUGIN_ID}/methods"
+        const val EVENT_CHANNEL_NAME = "${BackgroundLocationPlugin.PLUGIN_ID}/events"
         private const val REQUEST_PERMISSIONS_REQUEST_CODE = 34
 
         private var instance: BackgroundLocationService? = null
@@ -46,6 +44,7 @@ class BackgroundLocationService: MethodChannel.MethodCallHandler, PluginRegistry
      */
     private var context: Context? = null
     private lateinit var channel: MethodChannel
+    private lateinit var eventChannel: EventChannel
     private var activity: Activity? = null
     private var isAttached = false
     private var receiver: MyReceiver? = null
@@ -75,7 +74,9 @@ class BackgroundLocationService: MethodChannel.MethodCallHandler, PluginRegistry
         channel = MethodChannel(messenger, METHOD_CHANNEL_NAME)
         channel.setMethodCallHandler(this)
 
-        receiver = MyReceiver()
+        receiver = MyReceiver(null)
+        eventChannel = EventChannel(messenger, EVENT_CHANNEL_NAME)
+        eventChannel.setStreamHandler(this)
 
         LocalBroadcastManager.getInstance(context).registerReceiver(receiver!!,
                 IntentFilter(LocationUpdatesService.ACTION_BROADCAST))
@@ -83,6 +84,7 @@ class BackgroundLocationService: MethodChannel.MethodCallHandler, PluginRegistry
 
     fun onDetachedFromEngine() {
         channel.setMethodCallHandler(null)
+        eventChannel.setStreamHandler(null)
         context = null
         isAttached = false
     }
@@ -196,7 +198,7 @@ class BackgroundLocationService: MethodChannel.MethodCallHandler, PluginRegistry
         }
     }
 
-    private inner class MyReceiver : BroadcastReceiver() {
+    private inner class MyReceiver(val events: EventChannel.EventSink?) : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val location = intent.getParcelableExtra<Location>(LocationUpdatesService.EXTRA_LOCATION)
             if (location != null) {
@@ -228,5 +230,17 @@ class BackgroundLocationService: MethodChannel.MethodCallHandler, PluginRegistry
             }
         }
         return true
+    }
+
+    override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+        receiver = MyReceiver(events)
+        LocalBroadcastManager.getInstance(context!!).registerReceiver(
+            receiver!!,
+            IntentFilter(LocationUpdatesService.ACTION_BROADCAST)
+        )
+    }
+
+    override fun onCancel(arguments: Any?) {
+        print("hello $arguments")
     }
 }
